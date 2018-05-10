@@ -8,7 +8,7 @@
 // Software.
 
 //! These functions can initialise logging for output to stdout only, or to a file and stdout.  For
-//! more fine-grained control, create a file called `log.toml` in the root directory of the project,
+//! more fine-grained control, create a file called `log.yml` in the root directory of the project,
 //! or in the same directory where the executable is.  See
 //! [log4rs docs](http://sfackler.github.io/log4rs/doc/v0.3.3/log4rs/index.html) for details about
 //! the format and structure of this file.
@@ -86,12 +86,12 @@ use self::async_log::{
 };
 
 use config_file_handler::FileHandler;
-use log::LogLevelFilter;
 use log4rs;
 use log4rs::config::{Appender, Config, Logger, Root};
 use log4rs::encode::json::JsonEncoder;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::file::Deserializers;
+use logger::{LevelFilter, ParseLevelError};
 use std::borrow::Borrow;
 use std::env;
 use std::fmt::{self, Display, Formatter};
@@ -100,8 +100,8 @@ use std::path::Path;
 use std::sync::{Once, ONCE_INIT};
 
 static INITIALISE_LOGGER: Once = ONCE_INIT;
-static CONFIG_FILE: &str = "log.toml";
-static DEFAULT_LOG_LEVEL_FILTER: LogLevelFilter = LogLevelFilter::Warn;
+static CONFIG_FILE: &str = "log.yml";
+static DEFAULT_LOG_LEVEL_FILTER: LevelFilter = LevelFilter::Warn;
 
 /// Initialises the `env_logger` for output to stdout.
 ///
@@ -373,7 +373,13 @@ impl From<()> for ParseLoggerError {
     }
 }
 
-fn parse_loggers_from_env() -> Result<(LogLevelFilter, Vec<Logger>), ParseLoggerError> {
+impl From<ParseLevelError> for ParseLoggerError {
+    fn from(_: ParseLevelError) -> Self {
+        ParseLoggerError
+    }
+}
+
+fn parse_loggers_from_env() -> Result<(LevelFilter, Vec<Logger>), ParseLoggerError> {
     if let Ok(var) = env::var("RUST_LOG") {
         parse_loggers(&var)
     } else {
@@ -381,7 +387,7 @@ fn parse_loggers_from_env() -> Result<(LogLevelFilter, Vec<Logger>), ParseLogger
     }
 }
 
-fn parse_loggers(input: &str) -> Result<(LogLevelFilter, Vec<Logger>), ParseLoggerError> {
+fn parse_loggers(input: &str) -> Result<(LevelFilter, Vec<Logger>), ParseLoggerError> {
     use std::collections::VecDeque;
 
     let mut loggers = Vec::new();
@@ -399,7 +405,7 @@ fn parse_loggers(input: &str) -> Result<(LogLevelFilter, Vec<Logger>), ParseLogg
                 loggers.push(Logger::builder().build(module_name.to_owned(), level_filter));
             }
             (Some(module), None) => {
-                if let Ok(level_filter) = module.parse::<LogLevelFilter>() {
+                if let Ok(level_filter) = module.parse::<LevelFilter>() {
                     default_level = level_filter;
                 } else {
                     grouped_modules.push_back(module.to_owned());
@@ -427,78 +433,78 @@ fn init_once_guard<F: FnOnce() -> Result<(), String>>(init_fn: F) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::parse_loggers;
-    use log::LogLevelFilter;
+    use logger::LevelFilter;
 
     #[test]
     fn test_parse_loggers_empty() {
         let (level, loggers) = unwrap!(parse_loggers(""));
-        assert_eq!(level, LogLevelFilter::Warn);
+        assert_eq!(level, LevelFilter::Warn);
         assert!(loggers.is_empty());
     }
 
     #[test]
     fn test_parse_loggers_warn() {
         let (level, loggers) = unwrap!(parse_loggers("foo"));
-        assert_eq!(level, LogLevelFilter::Warn);
+        assert_eq!(level, LevelFilter::Warn);
         assert_eq!(loggers.len(), 1);
         assert_eq!(loggers[0].name(), "foo");
-        assert_eq!(loggers[0].level(), LogLevelFilter::Warn);
+        assert_eq!(loggers[0].level(), LevelFilter::Warn);
     }
 
     #[test]
     fn test_parse_loggers_info() {
         let (level, loggers) = unwrap!(parse_loggers("info"));
-        assert_eq!(level, LogLevelFilter::Info);
+        assert_eq!(level, LevelFilter::Info);
         assert!(loggers.is_empty());
     }
 
     #[test]
     fn test_parse_loggers_composed_warn() {
         let (level, loggers) = unwrap!(parse_loggers("foo::bar=warn"));
-        assert_eq!(level, LogLevelFilter::Warn);
+        assert_eq!(level, LevelFilter::Warn);
         assert_eq!(loggers.len(), 1);
         assert_eq!(loggers[0].name(), "foo::bar");
-        assert_eq!(loggers[0].level(), LogLevelFilter::Warn);
+        assert_eq!(loggers[0].level(), LevelFilter::Warn);
     }
 
     #[test]
     fn test_parse_loggers_all_levels() {
         let (level, loggers) = unwrap!(parse_loggers("foo::bar=error,baz=debug,qux"));
-        assert_eq!(level, LogLevelFilter::Warn);
+        assert_eq!(level, LevelFilter::Warn);
         assert_eq!(loggers.len(), 3);
 
         assert_eq!(loggers[0].name(), "foo::bar");
-        assert_eq!(loggers[0].level(), LogLevelFilter::Error);
+        assert_eq!(loggers[0].level(), LevelFilter::Error);
 
         assert_eq!(loggers[1].name(), "baz");
-        assert_eq!(loggers[1].level(), LogLevelFilter::Debug);
+        assert_eq!(loggers[1].level(), LevelFilter::Debug);
 
         assert_eq!(loggers[2].name(), "qux");
-        assert_eq!(loggers[2].level(), LogLevelFilter::Warn);
+        assert_eq!(loggers[2].level(), LevelFilter::Warn);
     }
 
     #[test]
     fn test_parse_loggers_debug_and_info() {
         let (level, loggers) = unwrap!(parse_loggers("info,foo::bar,baz=debug,a0,a1, a2 , a3"));
-        assert_eq!(level, LogLevelFilter::Info);
+        assert_eq!(level, LevelFilter::Info);
         assert_eq!(loggers.len(), 6);
 
         assert_eq!(loggers[0].name(), "foo::bar");
-        assert_eq!(loggers[0].level(), LogLevelFilter::Debug);
+        assert_eq!(loggers[0].level(), LevelFilter::Debug);
 
         assert_eq!(loggers[1].name(), "baz");
-        assert_eq!(loggers[1].level(), LogLevelFilter::Debug);
+        assert_eq!(loggers[1].level(), LevelFilter::Debug);
 
         assert_eq!(loggers[2].name(), "a0");
-        assert_eq!(loggers[2].level(), LogLevelFilter::Info);
+        assert_eq!(loggers[2].level(), LevelFilter::Info);
 
         assert_eq!(loggers[3].name(), "a1");
-        assert_eq!(loggers[3].level(), LogLevelFilter::Info);
+        assert_eq!(loggers[3].level(), LevelFilter::Info);
 
         assert_eq!(loggers[4].name(), "a2");
-        assert_eq!(loggers[4].level(), LogLevelFilter::Info);
+        assert_eq!(loggers[4].level(), LevelFilter::Info);
 
         assert_eq!(loggers[5].name(), "a3");
-        assert_eq!(loggers[5].level(), LogLevelFilter::Info);
+        assert_eq!(loggers[5].level(), LevelFilter::Info);
     }
 }

@@ -12,13 +12,13 @@
 use crate::log::web_socket::WebSocket;
 use crate::thread::{self, Joiner};
 use config_file_handler::FileHandler;
-use log::LogRecord;
 use log4rs::append::Append;
 use log4rs::encode::json::JsonEncoder;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::encode::writer::simple::SimpleWriter;
 use log4rs::encode::Encode;
 use log4rs::file::{Deserialize, Deserializers};
+use logger::Record;
 use regex::Regex;
 use serde_value::Value;
 use std::borrow::Borrow;
@@ -510,11 +510,14 @@ impl AsyncAppender {
 }
 
 impl Append for AsyncAppender {
-    fn append(&self, record: &LogRecord) -> Result<(), Box<Error + Sync + Send>> {
+    fn append(&self, record: &Record) -> Result<(), Box<Error + Sync + Send>> {
         let mut msg = Vec::new();
         self.encoder.encode(&mut SimpleWriter(&mut msg), record)?;
         unwrap!(self.tx.lock()).send(AsyncEvent::Log(msg))?;
         Ok(())
+    }
+    /// Flushes all in-flight records.
+    fn flush(&self) {
     }
 }
 
